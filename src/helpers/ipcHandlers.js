@@ -5316,13 +5316,20 @@ class IPCHandlers {
           return { systemAudioMode, systemAudioStrategy };
         } catch (error) {
           debugLogger.warn(
-            `Native system audio capture failed ${context}, falling back to mic-only`,
+            `Native system audio capture failed (context: ${context}), falling back to mic-only`,
             { error: error.message },
             "meeting"
           );
           if (this._meetingSystemStreaming?.isConnected) {
-            await this._meetingSystemStreaming.disconnect().catch(() => ({ text: "" }));
-            this._meetingSystemStreaming = null;
+            try {
+              await this._meetingSystemStreaming.disconnect();
+            } catch (disconnectError) {
+              debugLogger.debug("Failed to disconnect system meeting stream after fallback", {
+                error: disconnectError?.message,
+              });
+            } finally {
+              this._meetingSystemStreaming = null;
+            }
           }
           return { systemAudioMode: "unsupported", systemAudioStrategy: "unsupported" };
         }
