@@ -5136,12 +5136,12 @@ class IPCHandlers {
           }
           await startMeetingAec(systemAudioMode);
           await startLiveSpeakerIdentification(win, systemAudioMode);
-          systemAudioStrategy = await startMeetingSystemAudio(
+          ({ systemAudioMode, systemAudioStrategy } = await startMeetingSystemAudio(
             event,
             systemAudioMode,
             systemAudioStrategy,
             "during warm-start reuse"
-          );
+          ));
           return {
             success: true,
             systemAudioMode,
@@ -5165,12 +5165,12 @@ class IPCHandlers {
             transcribeAllLocalBuffers();
           }, 5000);
 
-          systemAudioStrategy = await startMeetingSystemAudio(
+          ({ systemAudioMode, systemAudioStrategy } = await startMeetingSystemAudio(
             event,
             systemAudioMode,
             systemAudioStrategy,
             "in local meeting mode"
-          );
+          ));
 
           debugLogger.debug("Meeting transcription started in local mode", {
             provider: meetingLocalProvider,
@@ -5194,12 +5194,12 @@ class IPCHandlers {
         const realtimeWin = BrowserWindow.fromWebContents(event.sender);
         await startLiveSpeakerIdentification(realtimeWin, systemAudioMode);
         await startMeetingAec(systemAudioMode);
-        systemAudioStrategy = await startMeetingSystemAudio(
+        ({ systemAudioMode, systemAudioStrategy } = await startMeetingSystemAudio(
           event,
           systemAudioMode,
           systemAudioStrategy,
           "in realtime mode"
-        );
+        ));
         return {
           success: true,
           systemAudioMode,
@@ -5311,24 +5311,37 @@ class IPCHandlers {
       context
     ) => {
       if (systemAudioMode === "native") {
-        await startNativeMeetingSystemAudio(event);
-        return systemAudioStrategy;
+        try {
+          await startNativeMeetingSystemAudio(event);
+          return { systemAudioMode, systemAudioStrategy };
+        } catch (error) {
+          debugLogger.warn(
+            `Native system audio capture failed ${context}, falling back to mic-only`,
+            { error: error.message },
+            "meeting"
+          );
+          if (this._meetingSystemStreaming?.isConnected) {
+            await this._meetingSystemStreaming.disconnect().catch(() => ({ text: "" }));
+            this._meetingSystemStreaming = null;
+          }
+          return { systemAudioMode: "unsupported", systemAudioStrategy: "unsupported" };
+        }
       }
 
       if (systemAudioStrategy !== "portal-helper") {
-        return systemAudioStrategy;
+        return { systemAudioMode, systemAudioStrategy };
       }
 
       try {
         await startLinuxMeetingSystemAudio(event);
-        return systemAudioStrategy;
+        return { systemAudioMode, systemAudioStrategy };
       } catch (error) {
         debugLogger.warn(
           `Linux portal helper failed ${context}, falling back to browser portal`,
           { error: error.message },
           "meeting"
         );
-        return "browser-portal";
+        return { systemAudioMode, systemAudioStrategy: "browser-portal" };
       }
     };
 
